@@ -183,16 +183,32 @@ function handleAddExpense() {
     if (!validateExpenseInput(categoryId, amount, note)) return;
     
     const category = categories[categoryId];
+    
+    // Check if expense exceeds category limit
+    if (category.spent + amount > category.limit) {
+        if (!confirm(`Cảnh báo: Chi tiêu này sẽ vượt quá giới hạn danh mục ${category.name}! Tiếp tục?`)) {
+            return;
+        }
+    }
+    
+    // Add transaction
     transactions.push({
         category: category.name,
+        categoryId: parseInt(categoryId),
         amount,
         note,
         date: new Date().toISOString()
     });
     
+    // Update category spending
+    category.spent += amount;
+    category.remaining = category.limit - category.spent;
+    
     saveData();
     clearExpenseInputs();
+    renderCategories();
     renderTransactions();
+    showBudgetStatus();
 }
 
 function handleTransactionActions(e) {
@@ -203,7 +219,19 @@ function handleTransactionActions(e) {
 
 function handleSearch() {
     currentPage = 1;
-    renderTransactions(elements.searchInput.value);
+    const searchTerm = elements.searchInput.value.trim();
+    if (searchTerm === '') {
+        renderTransactions();
+        return;
+    }
+    renderTransactions(searchTerm);
+    
+    // Show search results count
+    const filteredCount = transactions.filter(t => 
+        t.note.toLowerCase().includes(searchTerm.toLowerCase()) || 
+        t.category.toLowerCase().includes(searchTerm.toLowerCase())).length;
+        
+    alert(`Tìm thấy ${filteredCount} giao dịch phù hợp`);
 }
 
 // ========== CATEGORY OPERATIONS ==========
@@ -221,18 +249,52 @@ function saveCategoryEdit() {
     
     if (!validateCategoryInput(name, limit)) return;
     
-    categories[editingCategoryId] = { name, limit };
+    // Check for duplicate name (excluding current category)
+    if (categories.some((cat, index) => 
+        index !== editingCategoryId && cat.name.toLowerCase() === name.toLowerCase())) {
+        alert('Tên danh mục này đã tồn tại!');
+        return;
+    }
+    
+    // Update category and adjust spending data
+    const category = categories[editingCategoryId];
+    const limitChange = limit - category.limit;
+    category.name = name;
+    category.limit = limit;
+    category.remaining += limitChange;
+    
+    // Update any transactions with this category
+    transactions.forEach(t => {
+        if (t.categoryId === editingCategoryId) {
+            t.category = name;
+        }
+    });
+    
     saveData();
     closeEditModal();
     renderCategories();
+    renderTransactions();
+    showBudgetStatus();
 }
 
 function deleteCategory(id) {
-    if (!confirm('Bạn có chắc chắn muốn xóa danh mục này?')) return;
+    if (!confirm('Bạn có chắc chắn muốn xóa danh mục này?\nTất cả giao dịch thuộc danh mục này sẽ bị xóa!')) return;
+    
+    // Remove all transactions for this category
+    transactions = transactions.filter(t => t.categoryId !== id);
+    
+    // Update category IDs for remaining transactions
+    transactions.forEach(t => {
+        if (t.categoryId > id) {
+            t.categoryId--;
+        }
+    });
     
     categories.splice(id, 1);
     saveData();
     renderCategories();
+    renderTransactions();
+    showBudgetStatus();
 }
 
 // ========== TRANSACTION OPERATIONS ==========
@@ -261,10 +323,8 @@ function showBudgetStatus() {
     const totalSpent = categories.reduce((sum, cat) => sum + cat.spent, 0);
     const remaining = totalBudget - totalSpent;
     
-    // Show warning if over budget
-    if (totalSpent > totalBudget) {
-        alert(`Cảnh báo: Bạn đã vượt quá ngân sách! Đã chi ${formatCurrency(totalSpent)} / ${formatCurrency(totalBudget)}`);
-    }
+    // Calculate monthly statistics
+    const monthlyStats = calculateMonthlyStats();
     
     // Update UI with budget status
     const statusElement = document.createElement('div');
@@ -274,7 +334,21 @@ function showBudgetStatus() {
         <p>Tổng ngân sách: ${formatCurrency(totalBudget)}</p>
         <p>Đã chi tiêu: ${formatCurrency(totalSpent)}</p>
         <p>Còn lại: ${formatCurrency(remaining)}</p>
+        <div class="category-stats">
+            <h4>Chi tiết theo danh mục:</h4>
+            ${categories.map(cat => `
+                <p>${cat.name}: ${formatCurrency(cat.spent)} / ${formatCurrency(cat.limit)}</p>
+            `).join('')}
+        </div>
     `;
+    
+    // Show warning if over budget
+    if (totalSpent > totalBudget) {
+        const warningElement = document.createElement('div');
+        warningElement.className = 'budget-warning';
+        warningElement.innerHTML = `⚠️ Cảnh báo: Bạn đã vượt quá ngân sách!`;
+        statusElement.prepend(warningElement);
+    }
     
     // Remove previous status if exists
     const oldStatus = document.querySelector('.budget-status');
@@ -288,6 +362,7 @@ function showBudgetStatus() {
 function toggleSortDirection() {
     sortDirection = sortDirection === 'desc' ? 'asc' : 'desc';
     elements.sortBtn.textContent = `Sắp xếp: ${sortDirection === 'desc' ? 'Giảm dần ▼' : 'Tăng dần ▲'}`;
+    currentPage = 1; // Reset to first page when changing sort
     renderTransactions();
 }
 
@@ -336,10 +411,43 @@ function validateCategoryInput(name, limit) {
     return true;
 }
 
+function calculateMonthlyStats() {
+    const months = {};
+    const now = new Date();
+    const currentMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    
+    transactions.forEach(transaction => {
+        const date = new Date(transaction.date);
+        const month = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0');
+        
+        if (!months[month]) {
+            months[month] = {
+                total: 0,
+                categories: {}
+            };
+        }
+        
+        months[month].total += transaction.amount;
+        
+        if (!months[month].categories[transaction.category]) {
+            months[month].categories[transaction.category] = 0;
+        }
+        months[month].categories[transaction.category] += transaction.amount;
+    });
+    
+    return months;
+}
+
 function validateExpenseInput(categoryId, amount, note) {
     if (!categoryId || isNaN(amount) || !note) {
         alert('Vui lòng nhập đầy đủ thông tin giao dịch');
         return false;
     }
+    
+    if (amount <= 0) {
+        alert('Số tiền phải lớn hơn 0');
+        return false;
+    }
+    
     return true;
 }
