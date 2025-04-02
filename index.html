@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="data:,">
     <title>Quản Lý Tài Chính Cá Nhân</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
     <link rel="stylesheet" href="styles.css">
@@ -41,13 +42,16 @@
                 <div id="remainingAmount">0 VND</div>
             </div>
 
-            <div class="container4" id="categoriesContainer">
+            <div class="container4" id="categoriesList">
                 <!-- Categories will be dynamically added here -->
             </div>
 
             <div class="container5">
                 <input type="number" id="expenseAmount" placeholder="Số tiền">
-                <div id="expenseCategory">Tiền chi tiêu</div>
+                <select id="categorySelect">
+                    <option value="">Chọn danh mục</option>
+                    <!-- Categories will be dynamically added -->
+                </select>
                 <input type="text" id="expenseNote" placeholder="Ghi chú">
                 <button id="addExpenseBtn">Thêm</button>
             </div>
@@ -56,21 +60,20 @@
                 <p>🧾 Lịch sử giao dịch</p>
                 <div class="select">
                     <div>
-                        <img src="assets/icons/SVG (2).png" alt="">
+                        <i class="fas fa-search"></i>
                         <input type="text" id="searchInput" placeholder="tìm nội dung">
                     </div>
                     <button id="searchBtn"><i class="fa-solid fa-magnifying-glass"></i></button>
-                    <div>Sắp xếp theo giá</div>
+                    <select id="sortOrder">
+                        <option value="desc">Giá giảm dần</option>
+                        <option value="asc">Giá tăng dần</option>
+                    </select>
                 </div>
-                <div class="content3" id="transactionsContainer">
+                <div class="content3" id="expensesHistory">
                     <!-- Transactions will be dynamically added here -->
                 </div>
-                <div class="move">
-                    <button class="item">Previous</button>
-                    <button class="button">1</button>
-                    <button class="button">2</button>
-                    <button class="button">3</button>
-                    <button class="item2">Next</button>
+                <div id="paginationControls" class="move">
+                    <!-- Pagination will be dynamically added -->
                 </div>
             </div>
 
@@ -95,6 +98,6 @@
         <p>© 2025 Quản Lý Tài Chính Cá Nhân. by Quốc Hai!</p>
     </div>
 
-    <script src="finance-manager.js"></script>
+    <script src="js/index.js"></script>
 </body>
 </html>
