@@ -144,10 +144,27 @@ function handleAddCategory() {
     
     if (!validateCategoryInput(name, limit)) return;
     
-    categories.push({ name, limit });
+    // Check for duplicate category name
+    if (categories.some(cat => cat.name.toLowerCase() === name.toLowerCase())) {
+        alert('Danh mục này đã tồn tại!');
+        return;
+    }
+    
+    categories.push({ 
+        name, 
+        limit,
+        spent: 0,
+        remaining: limit
+    });
     saveData();
     clearCategoryInputs();
     renderCategories();
+    
+    // Update category dropdown
+    const option = document.createElement('option');
+    option.value = categories.length - 1;
+    option.textContent = name;
+    elements.expenseCategory.appendChild(option);
 }
 
 function handleCategoryActions(e) {
@@ -222,9 +239,49 @@ function deleteCategory(id) {
 function deleteTransaction(id) {
     if (!confirm('Bạn có chắc chắn muốn xóa giao dịch này?')) return;
     
+    const transaction = transactions[id];
+    
+    // Update category spending
+    if (transaction.categoryId !== undefined) {
+        const category = categories[transaction.categoryId];
+        category.spent -= transaction.amount;
+        category.remaining = category.limit - category.spent;
+    }
+    
     transactions.splice(id, 1);
     saveData();
+    renderCategories();
     renderTransactions();
+    showBudgetStatus();
+}
+
+function showBudgetStatus() {
+    // Calculate total budget and spending
+    const totalBudget = categories.reduce((sum, cat) => sum + cat.limit, 0);
+    const totalSpent = categories.reduce((sum, cat) => sum + cat.spent, 0);
+    const remaining = totalBudget - totalSpent;
+    
+    // Show warning if over budget
+    if (totalSpent > totalBudget) {
+        alert(`Cảnh báo: Bạn đã vượt quá ngân sách! Đã chi ${formatCurrency(totalSpent)} / ${formatCurrency(totalBudget)}`);
+    }
+    
+    // Update UI with budget status
+    const statusElement = document.createElement('div');
+    statusElement.className = 'budget-status';
+    statusElement.innerHTML = `
+        <h3>Tổng quan ngân sách</h3>
+        <p>Tổng ngân sách: ${formatCurrency(totalBudget)}</p>
+        <p>Đã chi tiêu: ${formatCurrency(totalSpent)}</p>
+        <p>Còn lại: ${formatCurrency(remaining)}</p>
+    `;
+    
+    // Remove previous status if exists
+    const oldStatus = document.querySelector('.budget-status');
+    if (oldStatus) oldStatus.remove();
+    
+    // Insert after categories section
+    document.querySelector('.category-section').after(statusElement);
 }
 
 // ========== UTILITY FUNCTIONS ==========
