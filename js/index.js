@@ -8,7 +8,10 @@ if (!currentUser) {
 let financeData = JSON.parse(localStorage.getItem('financeData')) || {
     monthlyBudgets: {},
     categories: [],
-    transactions: []
+    transactions: [],
+    currentPage: 1,
+    itemsPerPage: 5,
+    sortOrder: 'desc'
 };
 
 // DOM Elements
@@ -96,27 +99,87 @@ function setupEventListeners() {
         renderCategories();
     });
 
-    // Add expense
-    addExpenseBtn.addEventListener('click', () => {
-        const amount = parseFloat(expenseAmount.value);
-        const note = expenseNote.value.trim();
-        const categoryId = /* Get selected category */;
+// Add expense
+addExpenseBtn.addEventListener('click', () => {
+    const amount = parseFloat(expenseAmount.value);
+    const note = expenseNote.value.trim();
+    const categorySelect = document.getElementById('categorySelect');
+    const categoryId = parseInt(categorySelect.value);
 
-        if (isNaN(amount) || amount <= 0 || !note) {
-            alert('Vui lòng nhập đầy đủ thông tin');
-            return;
-        }
+    if (isNaN(amount) || amount <= 0 || !note || !categoryId) {
+        alert('Vui lòng nhập đầy đủ thông tin');
+        return;
+    }
 
-        // Add transaction logic
-        // Update category spending
-        // Update monthly budget
-        // Save and update UI
-    });
+    const month = monthSelect.value;
+    const transaction = {
+        id: Date.now(),
+        date: new Date().toISOString(),
+        amount,
+        note,
+        categoryId,
+        category: financeData.categories.find(c => c.id === categoryId)?.name || 'Khác'
+    };
+
+    financeData.transactions.push(transaction);
+    
+    // Update category spending
+    const category = financeData.categories.find(c => c.id === categoryId);
+    if (category) {
+        category.spent += amount;
+    }
+    
+    // Update monthly budget
+    financeData.monthlyBudgets[month].spent += amount;
+    financeData.monthlyBudgets[month].remaining -= amount;
+    
+    saveData();
+    updateUI();
+});
 
     // Search transactions
     searchBtn.addEventListener('click', () => {
         const term = searchInput.value.trim();
         searchTransactions(term);
+    });
+
+    // Sort transactions
+    document.getElementById('sortOrder').addEventListener('change', (e) => {
+        financeData.sortOrder = e.target.value;
+        saveData();
+        renderTransactions();
+    });
+
+    // Pagination
+    document.addEventListener('click', (e) => {
+        if (e.target.id === 'prevPage') {
+            financeData.currentPage--;
+            saveData();
+            renderTransactions();
+        } else if (e.target.id === 'nextPage') {
+            financeData.currentPage++;
+            saveData();
+            renderTransactions();
+        }
+    });
+
+    // Category actions
+    categoriesList.addEventListener('click', (e) => {
+        if (e.target.classList.contains('edit-category')) {
+            const id = parseInt(e.target.dataset.id);
+            editCategory(id);
+        } else if (e.target.classList.contains('delete-category')) {
+            const id = parseInt(e.target.dataset.id);
+            deleteCategory(id);
+        }
+    });
+
+    // Transaction actions
+    expensesHistory.addEventListener('click', (e) => {
+        if (e.target.classList.contains('delete-transaction')) {
+            const id = parseInt(e.target.dataset.id);
+            deleteTransaction(id);
+        }
     });
 }
 
@@ -154,13 +217,23 @@ function renderCategories() {
     `).join('');
 }
 
-// Render transactions
+// Render transactions with pagination and sorting
 function renderTransactions() {
     const month = monthSelect.value;
-    const monthlyTransactions = financeData.transactions
-        .filter(t => t.date.startsWith(month));
-        
-    expensesHistory.innerHTML = monthlyTransactions.map(transaction => `
+    let monthlyTransactions = financeData.transactions
+        .filter(t => t.date.startsWith(month))
+        .sort((a, b) => financeData.sortOrder === 'asc' 
+            ? a.amount - b.amount 
+            : b.amount - a.amount);
+
+    // Pagination
+    const startIndex = (financeData.currentPage - 1) * financeData.itemsPerPage;
+    const paginatedTransactions = monthlyTransactions.slice(
+        startIndex, 
+        startIndex + financeData.itemsPerPage
+    );
+    
+    expensesHistory.innerHTML = paginatedTransactions.map(transaction => `
         <div class="content2">
             <div class="item">${transaction.category} - ${transaction.note}: ${transaction.amount.toLocaleString()}</div>
             <div class="item_button">
@@ -168,6 +241,93 @@ function renderTransactions() {
             </div>
         </div>
     `).join('');
+
+    // Render pagination controls
+    const totalPages = Math.ceil(monthlyTransactions.length / financeData.itemsPerPage);
+    document.getElementById('paginationControls').innerHTML = `
+        <button ${financeData.currentPage <= 1 ? 'disabled' : ''} id="prevPage">←</button>
+        <span>Trang ${financeData.currentPage}/${totalPages}</span>
+        <button ${financeData.currentPage >= totalPages ? 'disabled' : ''} id="nextPage">→</button>
+    `;
+}
+
+// Search transactions
+function searchTransactions(term) {
+    const month = monthSelect.value;
+    const results = financeData.transactions
+        .filter(t => t.date.startsWith(month) && 
+               (t.note.toLowerCase().includes(term.toLowerCase()) || 
+                t.category.toLowerCase().includes(term.toLowerCase())));
+    
+    expensesHistory.innerHTML = results.map(transaction => `
+        <div class="content2">
+            <div class="item">${transaction.category} - ${transaction.note}: ${transaction.amount.toLocaleString()}</div>
+            <div class="item_button">
+                <button class="delete-transaction" data-id="${transaction.id}">Xóa</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+// Delete transaction
+function deleteTransaction(id) {
+    const transaction = financeData.transactions.find(t => t.id === id);
+    if (!transaction) return;
+
+    const month = transaction.date.slice(0, 7);
+    
+    // Update category spending
+    const category = financeData.categories.find(c => c.id === transaction.categoryId);
+    if (category) {
+        category.spent -= transaction.amount;
+    }
+    
+    // Update monthly budget
+    financeData.monthlyBudgets[month].spent -= transaction.amount;
+    financeData.monthlyBudgets[month].remaining += transaction.amount;
+    
+    // Remove transaction
+    financeData.transactions = financeData.transactions.filter(t => t.id !== id);
+    
+    saveData();
+    updateUI();
+}
+
+// Edit category
+function editCategory(id) {
+    const category = financeData.categories.find(c => c.id === id);
+    if (!category) return;
+
+    const newName = prompt('Tên mới:', category.name);
+    if (!newName) return;
+
+    const newLimit = parseFloat(prompt('Giới hạn mới:', category.limit));
+    if (isNaN(newLimit) || newLimit <= 0) {
+        alert('Giới hạn không hợp lệ');
+        return;
+    }
+
+    category.name = newName;
+    category.limit = newLimit;
+    
+    saveData();
+    renderCategories();
+}
+
+// Delete category
+function deleteCategory(id) {
+    if (!confirm('Xóa danh mục này sẽ xóa tất cả giao dịch liên quan. Tiếp tục?')) {
+        return;
+    }
+
+    // Delete related transactions
+    financeData.transactions = financeData.transactions.filter(t => t.categoryId !== id);
+    
+    // Delete category
+    financeData.categories = financeData.categories.filter(c => c.id !== id);
+    
+    saveData();
+    updateUI();
 }
 
 // Update budget display
