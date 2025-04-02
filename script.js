@@ -1,12 +1,14 @@
 // Financial Management System - Complete Implementation
 
 // ========== DATA STORAGE ==========
+let monthlyBudgets = JSON.parse(localStorage.getItem('monthlyBudgets')) || {};
 let categories = JSON.parse(localStorage.getItem('categories')) || [];
 let transactions = JSON.parse(localStorage.getItem('transactions')) || [];
 let currentPage = 1;
 const itemsPerPage = 5;
 let sortDirection = 'desc';
 let editingCategoryId = null;
+let selectedMonth = new Date().toISOString().slice(0, 7); // YYYY-MM format
 
 // ========== DOM ELEMENTS ==========
 const elements = {
@@ -36,9 +38,21 @@ const elements = {
 document.addEventListener('DOMContentLoaded', initializeApp);
 
 function initializeApp() {
+    // Set up month selector
+    const monthSelect = document.getElementById('monthSelect');
+    const currentDate = new Date();
+    monthSelect.value = currentDate.toISOString().slice(0, 7);
+    selectedMonth = monthSelect.value;
+    
+    // Initialize budget display
+    updateBudgetDisplay();
+    
     renderCategories();
     renderTransactions();
     setupEventListeners();
+    
+    // Set up budget save button
+    document.getElementById('saveBudgetBtn').addEventListener('click', setMonthlyBudget);
 }
 
 // ========== RENDER FUNCTIONS ==========
@@ -197,18 +211,30 @@ function handleAddExpense() {
         categoryId: parseInt(categoryId),
         amount,
         note,
-        date: new Date().toISOString()
+        date: new Date().toISOString(),
+        month: selectedMonth
     });
     
     // Update category spending
     category.spent += amount;
     category.remaining = category.limit - category.spent;
     
+    // Update monthly budget
+    const monthlyBudget = monthlyBudgets[selectedMonth];
+    monthlyBudget.spent += amount;
+    monthlyBudget.remaining = monthlyBudget.budget - monthlyBudget.spent;
+    
+    // Check if exceeds monthly budget
+    if (monthlyBudget.remaining < 0) {
+        alert(`Cảnh báo: Bạn đã vượt quá ngân sách tháng!`);
+    }
+    
     saveData();
     clearExpenseInputs();
     renderCategories();
     renderTransactions();
     showBudgetStatus();
+    updateBudgetDisplay();
 }
 
 function handleTransactionActions(e) {
@@ -310,15 +336,25 @@ function deleteTransaction(id) {
         category.remaining = category.limit - category.spent;
     }
     
+    // Update monthly budget
+    if (monthlyBudgets[transaction.month]) {
+        monthlyBudgets[transaction.month].spent -= transaction.amount;
+        monthlyBudgets[transaction.month].remaining += transaction.amount;
+    }
+    
     transactions.splice(id, 1);
     saveData();
     renderCategories();
     renderTransactions();
     showBudgetStatus();
+    updateBudgetDisplay();
 }
 
 function showBudgetStatus() {
-    // Calculate total budget and spending
+    // Calculate monthly budget status
+    const monthlyBudget = monthlyBudgets[selectedMonth] || { budget: 0, spent: 0, remaining: 0 };
+    
+    // Calculate category spending
     const totalBudget = categories.reduce((sum, cat) => sum + cat.limit, 0);
     const totalSpent = categories.reduce((sum, cat) => sum + cat.spent, 0);
     const remaining = totalBudget - totalSpent;
@@ -326,14 +362,36 @@ function showBudgetStatus() {
     // Calculate monthly statistics
     const monthlyStats = calculateMonthlyStats();
     
+    // Add monthly statistics to display
+    const monthlyStatsHTML = `
+        <div class="monthly-stats">
+            <h4>Thống kê theo tháng:</h4>
+            ${Object.entries(monthlyStats).map(([month, data]) => `
+                <div class="month-stat">
+                    <strong>${month}:</strong> ${formatCurrency(data.total)} chi tiêu
+                    ${data.total > (monthlyBudgets[month]?.budget || 0) ? '⚠️' : ''}
+                </div>
+            `).join('')}
+        </div>
+    `;
+    
     // Update UI with budget status
     const statusElement = document.createElement('div');
     statusElement.className = 'budget-status';
     statusElement.innerHTML = `
         <h3>Tổng quan ngân sách</h3>
-        <p>Tổng ngân sách: ${formatCurrency(totalBudget)}</p>
-        <p>Đã chi tiêu: ${formatCurrency(totalSpent)}</p>
-        <p>Còn lại: ${formatCurrency(remaining)}</p>
+        <div class="current-month">
+            <h4>Tháng hiện tại (${selectedMonth}):</h4>
+            <p>Ngân sách: ${formatCurrency(monthlyBudget.budget)}</p>
+            <p>Đã chi: ${formatCurrency(monthlyBudget.spent)}</p>
+            <p>Còn lại: ${formatCurrency(monthlyBudget.remaining)}</p>
+        </div>
+        <div class="overall-stats">
+            <h4>Tổng quan:</h4>
+            <p>Tổng ngân sách: ${formatCurrency(totalBudget)}</p>
+            <p>Tổng chi tiêu: ${formatCurrency(totalSpent)}</p>
+            <p>Tổng còn lại: ${formatCurrency(remaining)}</p>
+        </div>
         <div class="category-stats">
             <h4>Chi tiết theo danh mục:</h4>
             ${categories.map(cat => `
@@ -382,9 +440,43 @@ function closeEditModal() {
 }
 
 function saveData() {
+    localStorage.setItem('monthlyBudgets', JSON.stringify(monthlyBudgets));
     localStorage.setItem('categories', JSON.stringify(categories));
     localStorage.setItem('transactions', JSON.stringify(transactions));
 }
+
+function setMonthlyBudget() {
+    const budget = parseFloat(document.getElementById('budgetInput').value);
+    
+    if (isNaN(budget) || budget <= 0) {
+        alert('Vui lòng nhập số tiền ngân sách hợp lệ');
+        return;
+    }
+    
+    monthlyBudgets[selectedMonth] = {
+        budget: budget,
+        spent: 0,
+        remaining: budget
+    };
+    
+    saveData();
+    updateBudgetDisplay();
+}
+
+function updateBudgetDisplay() {
+    const budgetData = monthlyBudgets[selectedMonth] || { budget: 0, spent: 0, remaining: 0 };
+    document.getElementById('remainingAmount').textContent = formatCurrency(budgetData.remaining);
+    
+    if (budgetData.budget === 0) {
+        alert('Chưa nhập ngân sách cho tháng này!');
+    }
+}
+
+// Initialize month selection
+document.getElementById('monthSelect').addEventListener('change', (e) => {
+    selectedMonth = e.target.value;
+    updateBudgetDisplay();
+});
 
 function formatCurrency(amount) {
     return new Intl.NumberFormat('vi-VN', { 
